@@ -1,2 +1,3 @@
 # Verificador-de-Rondas
- Projeto criado para a empresa Grupo GPS para auditar justificativas de rondas não realizadas, detectando tentativas de burlar o processo com falta de comprovação, fotos pretas, imagens inválidas ou evidências suspeitas, gerando uma triagem clara por nível de risco.
+<img width="1672" height="941" alt="image" src="https://github.com/user-attachments/assets/a7917569-0ef3-40d7-a901-7de64a6392a7" />
+
