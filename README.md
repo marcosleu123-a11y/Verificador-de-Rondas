@@ -144,29 +144,6 @@ Para usar o agente IA separado:
 ```powershell
 python -m pip install -r agente_IA\requirements_agente_ia.txt
 ```
-
-## Configuracao Do `.env`
-
-Crie um arquivo `.env` na raiz do projeto:
-
-```env
-SQL_SERVER=172.31.50.62,1433
-SQL_DATABASE=PROJETOS
-SQL_AUTH=sql
-SQL_USER=seu_usuario
-SQL_PASSWORD=sua_senha
-SQL_DRIVER=ODBC Driver 17 for SQL Server
-SQL_CAMPO_PERIODO=disponibilizacao
-
-IA_PROVIDER=ollama
-OLLAMA_MODEL=gemma4:31b-cloud
-
-OPENAI_API_KEY=
-OPENAI_MODEL=gpt-4.1
-```
-
-> Nao envie `.env` para repositorios publicos. Ele pode conter senhas e chaves de API.
-
 ## Como Rodar
 
 ### 1. Rodar usando dados reais do banco
