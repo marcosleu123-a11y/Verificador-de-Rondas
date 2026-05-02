@@ -1,0 +1,7 @@
+.env
+__pycache__/
+*.pyc
+resultado*.csv
+resultados/*.csv
+resultados/*.xlsx
+README.md
