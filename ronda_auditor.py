@@ -652,8 +652,8 @@ def criar_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Antes de salvar no Postgres, remove execucoes antigas com periodo sobreposto ao novo",
     )
-    parser.add_argument("--sql-server", default=os.getenv("SQL_SERVER"), help="Servidor SQL Server. Exemplo: 172.31.50.62,1433")
-    parser.add_argument("--sql-database", default=os.getenv("SQL_DATABASE"), help="Nome do banco SQL Server. Exemplo: PROJETOS")
+    parser.add_argument("--sql-server", default=os.getenv("SQL_SERVER"), help="Servidor SQL Server. Exemplo: seu_servidor,1433")
+    parser.add_argument("--sql-database", default=os.getenv("SQL_DATABASE"), help="Nome do banco SQL Server. Exemplo: nome_do_banco")
     parser.add_argument(
         "--sql-auth",
         choices=["sql", "windows"],
