@@ -3,6 +3,29 @@
 
 > Projeto criado para a empresa **Grupo GPS** para auditar justificativas de rondas nao realizadas, detectando tentativas de burlar o processo com falta de comprovacao, fotos pretas, imagens invalidas ou evidencias suspeitas.
 
+
+## Dashboard BI da Auditoria de Rondas
+
+O projeto também conta com um dashboard em BI para acompanhamento dos resultados das análises feitas pela IA. O painel consolida as rondas auditadas, permitindo visualizar rapidamente o volume total de registros, classificações por status, colaboradores com maior número de ocorrências, locais mais recorrentes e distribuição das rondas por dia e horário.
+
+### Visão Geral
+
+![Visão geral do dashboard](<img width="984" height="547" alt="image" src="https://github.com/user-attachments/assets/dfbfeee3-fbef-478d-bb00-a7d2187df5cf" />)
+
+A visão geral apresenta os principais indicadores da auditoria, incluindo total de rondas analisadas, quantidade de rondas aprovadas, reprovadas, duvidosas e registros sem imagem. Também há gráficos para análise por colaborador, por local e uma matriz temporal que facilita identificar padrões de execução ao longo da semana e dos horários.
+
+### Detalhamento da Análise da IA
+
+![Detalhamento da análise da IA](<img width="985" height="550" alt="image" src="https://github.com/user-attachments/assets/6ae20239-9832-44c1-bba8-d6b8c5b341ea" />)
+
+A tela de detalhamento permite consultar cada ronda individualmente, exibindo dados como colaborador, data de execução, grupo de classificação da IA e justificativa da análise. Quando há imagem disponível, o painel mostra a foto auditada junto com os parâmetros visuais extraídos, como brilho médio, nitidez, variação visual, largura e altura da imagem.
+
+Essa visualização ajuda a validar o resultado da IA, revisar justificativas e entender os motivos de aprovação, reprovação, dúvida ou ausência de imagem.
+
+
+
+
+
 ## O Problema
 
 Em uma operacao de rondas, quando um colaborador responde **"Nao"** em **"INICIAR A RONDA?"**, ele precisa justificar e evidenciar o motivo. Na pratica, algumas justificativas podem esconder falhas no processo:
