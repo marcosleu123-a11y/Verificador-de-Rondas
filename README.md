@@ -10,13 +10,17 @@ O projeto também conta com um dashboard em BI para acompanhamento dos resultado
 
 ### Visão Geral
 
-![Visão geral do dashboard](<img width="984" height="547" alt="image" src="https://github.com/user-attachments/assets/dfbfeee3-fbef-478d-bb00-a7d2187df5cf" />)
+<img width="984" height="547" alt="image" src="https://github.com/user-attachments/assets/dfbfeee3-fbef-478d-bb00-a7d2187df5cf" />
+
+> Observação: alguns dados sensíveis foram ocultados nas imagens demonstrativas para preservar informações de colaboradores, locais e identificadores internos.
 
 A visão geral apresenta os principais indicadores da auditoria, incluindo total de rondas analisadas, quantidade de rondas aprovadas, reprovadas, duvidosas e registros sem imagem. Também há gráficos para análise por colaborador, por local e uma matriz temporal que facilita identificar padrões de execução ao longo da semana e dos horários.
 
 ### Detalhamento da Análise da IA
 
-![Detalhamento da análise da IA](<img width="985" height="550" alt="image" src="https://github.com/user-attachments/assets/6ae20239-9832-44c1-bba8-d6b8c5b341ea" />)
+<img width="972" height="544" alt="image" src="https://github.com/user-attachments/assets/8e85eca2-b3e8-452a-b2c6-77eeb7561b3e" />
+
+> Observação: alguns dados sensíveis foram ocultados nas imagens demonstrativas para preservar informações de colaboradores, locais e identificadores internos.
 
 A tela de detalhamento permite consultar cada ronda individualmente, exibindo dados como colaborador, data de execução, grupo de classificação da IA e justificativa da análise. Quando há imagem disponível, o painel mostra a foto auditada junto com os parâmetros visuais extraídos, como brilho médio, nitidez, variação visual, largura e altura da imagem.
 
