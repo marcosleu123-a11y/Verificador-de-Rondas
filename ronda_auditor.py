@@ -4,6 +4,7 @@ import csv
 import json
 import mimetypes
 import os
+import re
 import statistics
 import tempfile
 import urllib.request
@@ -14,11 +15,14 @@ from typing import Dict, Iterable, List, Optional, Tuple
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 
+from postgres_writer import ExecucaoAuditoria, salvar_auditoria_postgres
+
 
 GRUPO_VERMELHO = "vermelho"
 GRUPO_AMARELO = "amarelo"
 GRUPO_VERDE = "verde"
 GRUPO_SEM_COMPROVACAO = "sem_comprovacao"
+SQL_COLUNA_SEGURA_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?$")
 
 
 def carregar_env(caminho: Path) -> None:
@@ -325,7 +329,69 @@ def combinar_resultados(local: AnaliseImagem, ia: Optional[AnaliseIA]) -> Tuple[
     return ia.grupo, ia.confianca, f"IA ajustou classificacao: {ia.motivo}"
 
 
-def auditar_linhas(linhas: List[Dict[str, object]], pasta_base: Path, saida: Path, usar_ia: bool, ia_em: str) -> None:
+def salvar_resultado(linhas_saida: List[Dict[str, object]], saida: Path) -> None:
+    saida.parent.mkdir(parents=True, exist_ok=True)
+    if saida.suffix.lower() == ".xlsx":
+        salvar_xlsx(linhas_saida, saida)
+        return
+
+    campos = list(linhas_saida[0].keys()) if linhas_saida else []
+    with saida.open("w", encoding="utf-8", newline="") as arquivo_saida:
+        escritor = csv.DictWriter(arquivo_saida, fieldnames=campos)
+        escritor.writeheader()
+        escritor.writerows(linhas_saida)
+
+
+def salvar_xlsx(linhas_saida: List[Dict[str, object]], saida: Path) -> None:
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = saida.stem[:31] or "Auditoria"
+
+    colunas = list(linhas_saida[0].keys()) if linhas_saida else []
+    sheet.append(colunas)
+    for linha in linhas_saida:
+        sheet.append([linha.get(coluna, "") for coluna in colunas])
+
+    header_fill = PatternFill("solid", fgColor="1F2937")
+    header_font = Font(color="FFFFFF", bold=True)
+    for cell in sheet[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center")
+
+    cores = {
+        GRUPO_VERDE: "DCFCE7",
+        GRUPO_AMARELO: "FEF3C7",
+        GRUPO_VERMELHO: "FEE2E2",
+        GRUPO_SEM_COMPROVACAO: "E5E7EB",
+    }
+    if "grupo" in colunas:
+        indice_grupo = colunas.index("grupo") + 1
+        for row in range(2, sheet.max_row + 1):
+            grupo = str(sheet.cell(row=row, column=indice_grupo).value or "").lower()
+            fill = PatternFill("solid", fgColor=cores.get(grupo, "FFFFFF"))
+            for col in range(1, sheet.max_column + 1):
+                sheet.cell(row=row, column=col).fill = fill
+
+    sheet.freeze_panes = "A2"
+    if colunas:
+        sheet.auto_filter.ref = sheet.dimensions
+
+    for coluna in range(1, sheet.max_column + 1):
+        letra = get_column_letter(coluna)
+        maior = 12
+        for cell in sheet[letra]:
+            maior = max(maior, len(str(cell.value or "")) + 2)
+        sheet.column_dimensions[letra].width = min(maior, 55)
+
+    workbook.save(saida)
+
+
+def auditar_linhas(linhas: List[Dict[str, object]], pasta_base: Path, saida: Path, usar_ia: bool, ia_em: str) -> List[Dict[str, object]]:
     linhas_saida = []
     for linha_original in linhas:
         linha = {chave: "" if valor is None else str(valor) for chave, valor in linha_original.items()}
@@ -368,14 +434,11 @@ def auditar_linhas(linhas: List[Dict[str, object]], pasta_base: Path, saida: Pat
             }
         )
 
-    campos = list(linhas_saida[0].keys()) if linhas_saida else []
-    with saida.open("w", encoding="utf-8", newline="") as arquivo_saida:
-        escritor = csv.DictWriter(arquivo_saida, fieldnames=campos)
-        escritor.writeheader()
-        escritor.writerows(linhas_saida)
+    salvar_resultado(linhas_saida, saida)
+    return linhas_saida
 
 
-def auditar_csv(entrada: Path, saida: Path, usar_ia: bool, ia_em: str) -> None:
+def auditar_csv(entrada: Path, saida: Path, usar_ia: bool, ia_em: str) -> List[Dict[str, object]]:
     with entrada.open("r", encoding="utf-8-sig", newline="") as arquivo_entrada:
         amostra = arquivo_entrada.read(4096)
         arquivo_entrada.seek(0)
@@ -383,7 +446,7 @@ def auditar_csv(entrada: Path, saida: Path, usar_ia: bool, ia_em: str) -> None:
         leitor = csv.DictReader(arquivo_entrada, dialect=dialecto)
         if not leitor.fieldnames:
             raise ValueError("CSV de entrada esta vazio ou sem cabecalho")
-        auditar_linhas(list(leitor), entrada.parent, saida, usar_ia, ia_em)
+        return auditar_linhas(list(leitor), entrada.parent, saida, usar_ia, ia_em)
 
 
 def montar_intervalo_datas(data: Optional[str], data_inicio: Optional[str], data_fim: Optional[str]) -> Tuple[datetime, datetime]:
@@ -434,11 +497,23 @@ def campo_periodo_sql(campo_periodo: str) -> str:
     return campos[campo_periodo]
 
 
+def coluna_cr_sql(coluna_cr: Optional[str]) -> str:
+    if not coluna_cr:
+        return "CAST(NULL AS varchar(100))"
+    coluna_cr = coluna_cr.strip()
+    if not SQL_COLUNA_SEGURA_RE.match(coluna_cr):
+        raise ValueError(
+            "--sql-coluna-cr deve ser um identificador simples, como CR, t.CR ou t.Contrato_CR"
+        )
+    return coluna_cr
+
+
 def buscar_linhas_sql(args: argparse.Namespace) -> List[Dict[str, object]]:
     import pyodbc
 
     data_inicio, data_fim = montar_intervalo_datas(args.data, args.data_inicio, args.data_fim)
     campo_periodo = campo_periodo_sql(args.campo_periodo)
+    campo_cr = coluna_cr_sql(args.sql_coluna_cr)
     order_by = f"{campo_periodo} DESC, i.Numero DESC"
     if campo_periodo != "i.Data_Inicio":
         order_by = f"{campo_periodo} DESC, i.Data_Inicio DESC"
@@ -478,10 +553,38 @@ Justificativa AS (
     GROUP BY
         Numero,
         Tarefa_id
+),
+EstruturaExecucao AS (
+    SELECT
+        Numero,
+        Tarefa_id,
+        MAX(CASE
+            WHEN SKESTRUTURA IS NOT NULL
+             AND CONVERT(varchar(100), SKESTRUTURA) <> '-1'
+            THEN CONVERT(varchar(100), SKESTRUTURA)
+        END) AS Execucao_SKESTRUTURA,
+        MAX(CASE
+            WHEN QRCode IS NOT NULL
+             AND LTRIM(RTRIM(QRCode)) <> ''
+             AND QRCode COLLATE Latin1_General_CI_AI NOT IN ('Nao', 'NAO', 'nao')
+            THEN QRCode
+        END) AS Execucao_QRCode
+    FROM dbo.Execucao
+    GROUP BY
+        Numero,
+        Tarefa_id
 )
 SELECT
     i.Numero AS atividade_id,
     i.Tarefa_id AS tarefa_id,
+    COALESCE({campo_cr}, e_exec.ID_CR, e_tarefa.ID_CR) AS contrato_cr,
+    COALESCE(e_exec.ID_ESTRUTURA, e_tarefa.ID_ESTRUTURA) AS estrutura_id,
+    COALESCE(e_exec.NIVEL_03, e_tarefa.NIVEL_03) AS nivel_03,
+    COALESCE(e_exec.NIVEL_04, e_tarefa.NIVEL_04) AS nivel_04,
+    COALESCE(e_exec.ANDAR, e_tarefa.ANDAR) AS andar,
+    COALESCE(e_exec.LOCAL, e_tarefa.LOCAL) AS local,
+    COALESCE(e_exec.AMBIENTE, e_tarefa.AMBIENTE) AS ambiente,
+    COALESCE(ee.Execucao_QRCode, e_exec.QRCODE, e_tarefa.QRCODE) AS qrcode,
     i.Colaborador AS colaborador,
     {campo_periodo} AS data,
     i.Data_Inicio AS data_execucao_inicio,
@@ -498,7 +601,14 @@ SELECT
     j.data_justificativa
 FROM InicioNao i
 LEFT JOIN dbo.TAREFA t
-    ON t.tarefa_id = i.Tarefa_id
+    ON CONVERT(varchar(100), t.tarefa_id) = CONVERT(varchar(100), i.Tarefa_id)
+LEFT JOIN EstruturaExecucao ee
+    ON ee.Numero = i.Numero
+   AND ee.Tarefa_id = i.Tarefa_id
+LEFT JOIN dbo.D_ESTRUTURA e_exec
+    ON CONVERT(varchar(100), e_exec.SKESTRUTURA) = CONVERT(varchar(100), ee.Execucao_SKESTRUTURA)
+LEFT JOIN dbo.D_ESTRUTURA e_tarefa
+    ON CONVERT(varchar(100), e_tarefa.ID_ESTRUTURA) = CONVERT(varchar(100), t.estrutura_id)
 LEFT JOIN Justificativa j
     ON j.Numero = i.Numero
    AND j.Tarefa_id = i.Tarefa_id
@@ -518,12 +628,30 @@ def formatar_numero(valor: Optional[float]) -> str:
     return "" if valor is None else f"{valor:.4f}"
 
 
+def periodo_execucao(args: argparse.Namespace) -> Tuple[Optional[datetime], Optional[datetime]]:
+    if args.data or (args.data_inicio and args.data_fim):
+        inicio, fim_exclusivo = montar_intervalo_datas(args.data, args.data_inicio, args.data_fim)
+        return inicio, fim_exclusivo - timedelta(days=1)
+    return None, None
+
+
 def criar_parser() -> argparse.ArgumentParser:
     carregar_env_automatico()
 
     parser = argparse.ArgumentParser(description="Audita evidencias de rondas justificadas.")
     parser.add_argument("--saida", required=True, help="CSV de resultado da auditoria")
     parser.add_argument("--entrada", help="CSV com atividades justificadas")
+    parser.add_argument("--salvar-postgres", action="store_true", help="Grava rondas e analise do script no Postgres")
+    parser.add_argument(
+        "--substituir-periodo",
+        action="store_true",
+        help="Antes de salvar no Postgres, remove execucoes anteriores do mesmo periodo/origem/campo",
+    )
+    parser.add_argument(
+        "--substituir-sobreposicoes",
+        action="store_true",
+        help="Antes de salvar no Postgres, remove execucoes antigas com periodo sobreposto ao novo",
+    )
     parser.add_argument("--sql-server", default=os.getenv("SQL_SERVER"), help="Servidor SQL Server. Exemplo: 172.31.50.62,1433")
     parser.add_argument("--sql-database", default=os.getenv("SQL_DATABASE"), help="Nome do banco SQL Server. Exemplo: PROJETOS")
     parser.add_argument(
@@ -534,6 +662,11 @@ def criar_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--sql-user", default=os.getenv("SQL_USER"), help="Usuario SQL. Tambem pode usar a variavel SQL_USER")
     parser.add_argument("--sql-password-env", default="SQL_PASSWORD", help="Nome da variavel de ambiente com a senha SQL")
+    parser.add_argument(
+        "--sql-coluna-cr",
+        default=os.getenv("SQL_COLUNA_CR"),
+        help="Coluna do SQL Server usada como CR do contrato. Exemplo: t.CR ou t.Contrato_CR",
+    )
     parser.add_argument("--data", help="Data unica da auditoria, no formato AAAA-MM-DD")
     parser.add_argument("--data-inicio", help="Data inicial, no formato AAAA-MM-DD")
     parser.add_argument("--data-fim", help="Data final inclusiva, no formato AAAA-MM-DD")
@@ -557,16 +690,44 @@ def main() -> None:
     args = criar_parser().parse_args()
     saida = Path(args.saida)
 
+    if args.substituir_periodo and not args.salvar_postgres:
+        raise ValueError("--substituir-periodo so pode ser usado junto com --salvar-postgres")
+    if args.substituir_sobreposicoes and not args.salvar_postgres:
+        raise ValueError("--substituir-sobreposicoes so pode ser usado junto com --salvar-postgres")
+    if (args.substituir_periodo or args.substituir_sobreposicoes) and not (
+        args.data or (args.data_inicio and args.data_fim)
+    ):
+        raise ValueError("--substituir-periodo/--substituir-sobreposicoes exige periodo com --data ou --data-inicio/--data-fim")
+
     if args.entrada:
         entrada = Path(args.entrada)
-        auditar_csv(entrada, saida, args.usar_ia, args.ia_em)
+        linhas_saida = auditar_csv(entrada, saida, args.usar_ia, args.ia_em)
+        origem = "csv"
     else:
         if not args.sql_server or not args.sql_database:
             raise ValueError("informe --entrada ou informe --sql-server, --sql-database e a data")
         linhas = buscar_linhas_sql(args)
         print(f"Campo de periodo usado: {args.campo_periodo}")
         print(f"Registros encontrados no banco: {len(linhas)}")
-        auditar_linhas(linhas, Path.cwd(), saida, args.usar_ia, args.ia_em)
+        linhas_saida = auditar_linhas(linhas, Path.cwd(), saida, args.usar_ia, args.ia_em)
+        origem = "sql_server"
+
+    if args.salvar_postgres:
+        data_inicio, data_fim = periodo_execucao(args)
+        execucao_id = salvar_auditoria_postgres(
+            linhas_saida,
+            ExecucaoAuditoria(
+                origem=origem,
+                data_inicio=data_inicio.date() if data_inicio else None,
+                data_fim=data_fim.date() if data_fim else None,
+                campo_periodo=args.campo_periodo if origem == "sql_server" else None,
+                usar_ia=args.usar_ia,
+                arquivo_excel=saida,
+            ),
+            substituir_periodo=args.substituir_periodo,
+            substituir_sobreposicoes=args.substituir_sobreposicoes,
+        )
+        print(f"Auditoria salva no Postgres com execucao_id={execucao_id}")
 
     print(f"Auditoria concluida: {saida}")
 

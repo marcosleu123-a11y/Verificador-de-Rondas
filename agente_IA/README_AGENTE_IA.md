@@ -1,6 +1,8 @@
 # Agente IA de Validacao de Evidencias
 
-Este agente le um CSV de rondas justificadas, analisa a justificativa do colaborador junto com a imagem enviada e gera um novo arquivo `.xlsx` com a coluna:
+Este agente le um CSV de rondas justificadas ou busca pendencias no Postgres.
+Ele analisa a justificativa do colaborador junto com a imagem enviada e a analise tecnica do script Python.
+No modo CSV, gera um novo arquivo `.xlsx` com a coluna:
 
 ```text
 analisada por IA
@@ -13,8 +15,12 @@ Para cada linha, o agente observa:
 - justificativa do colaborador;
 - dados da tarefa/checklist, quando existirem no CSV;
 - classificacao anterior do auditor, quando existir;
+- analise tecnica do script: grupo, motivo, brilho, variacao visual, pixels escuros, pixels quase pretos, nitidez e dimensoes;
 - foto enviada em `image_url` ou `image_path`;
 - coerencia entre texto e imagem.
+- regra conservadora: quando a imagem nao permite decidir com seguranca, a IA deve marcar como `duvidosa`, nao como `aprovada`.
+
+O agente tambem aplica uma trava depois da resposta da IA. Se a IA aprovar, mas a propria descricao mencionar imagem escura, borrada, distante, generica, sem detalhes ou inconclusiva, a aprovacao e convertida para `duvidosa`.
 
 ## Resultado Da IA
 
@@ -56,6 +62,30 @@ python -m pip install -r agente_IA\requirements_agente_ia.txt
 ```
 
 ## Como Rodar
+
+### Modo Postgres
+
+Depois de rodar o auditor com `--salvar-postgres`, analise as rondas pendentes e grave em `dbo.analise_ia`:
+
+```powershell
+python agente_IA\agente_analise_ia.py --postgres
+```
+
+Para testar poucas linhas:
+
+```powershell
+python agente_IA\agente_analise_ia.py --postgres --limite 5
+```
+
+Para analisar apenas uma execucao:
+
+```powershell
+python agente_IA\agente_analise_ia.py --postgres --execucao-id 1
+```
+
+O modo Postgres ignora rondas que ja possuem registro em `dbo.analise_ia`, evitando duplicar analises na view do BI.
+
+### Modo CSV
 
 Exemplo usando um CSV da pasta `resultados`:
 

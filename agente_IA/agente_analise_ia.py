@@ -6,8 +6,9 @@ import mimetypes
 import os
 import tempfile
 import urllib.request
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 
 COLUNA_ANALISADA = "analisada por IA"
@@ -17,6 +18,29 @@ COLUNA_MOTIVO = "motivo_analise_ia"
 COLUNA_DESCRICAO_VISUAL = "descricao_visual_ia"
 COLUNA_ACAO = "acao_sugerida_ia"
 COLUNA_ERRO = "erro_analise_ia"
+
+GRUPOS_IA = {"aprovada", "reprovada", "duvidosa", "sem_imagem"}
+TERMOS_EVIDENCIA_FRACA = [
+    "nao da para",
+    "nao e possivel",
+    "nao permite",
+    "nao identifica",
+    "nao consigo",
+    "sem detalhes",
+    "pouco detalhe",
+    "baixa qualidade",
+    "borrada",
+    "desfocada",
+    "escura",
+    "muito escura",
+    "preta",
+    "distante",
+    "ilegivel",
+    "nao conclusiva",
+    "inconclusiva",
+    "generica",
+    "parcial",
+]
 
 
 def carregar_env(caminho: Path) -> None:
@@ -61,6 +85,25 @@ def valor(linha: Dict[str, str], *nomes: str) -> str:
         if nome in linha and linha[nome]:
             return str(linha[nome]).strip()
     return ""
+
+
+def decimal_texto(texto: str) -> Optional[Decimal]:
+    if not texto:
+        return None
+    try:
+        return Decimal(str(texto).replace(",", "."))
+    except InvalidOperation:
+        return None
+
+
+def float_texto(texto: str) -> Optional[float]:
+    decimal = decimal_texto(texto)
+    return float(decimal) if decimal is not None else None
+
+
+def contem_termo(texto: str, termos: List[str]) -> bool:
+    texto_normalizado = texto.lower()
+    return any(termo in texto_normalizado for termo in termos)
 
 
 def baixar_imagem(image_url: str) -> Path:
@@ -172,6 +215,14 @@ def montar_contexto(linha: Dict[str, str]) -> str:
     campos_interessantes = [
         "atividade_id",
         "tarefa_id",
+        "contrato_cr",
+        "estrutura_id",
+        "nivel_03",
+        "nivel_04",
+        "andar",
+        "local",
+        "ambiente",
+        "qrcode",
         "colaborador",
         "data",
         "tarefa_nome",
@@ -179,7 +230,11 @@ def montar_contexto(linha: Dict[str, str]) -> str:
         "checklist_descricao",
         "justificativa",
         "grupo",
+        "grupo_local",
+        "grupo_script",
         "motivo",
+        "motivo_local",
+        "motivo_script",
         "image_url",
     ]
 
@@ -189,6 +244,111 @@ def montar_contexto(linha: Dict[str, str]) -> str:
         if conteudo:
             partes.append(f"{campo}: {conteudo}")
     return "\n".join(partes) if partes else "Sem contexto textual estruturado."
+
+
+def montar_analise_script(linha: Dict[str, str]) -> Tuple[str, str]:
+    grupo = valor(linha, "grupo_script", "grupo_local", "grupo")
+    confianca = valor(linha, "confianca_script", "confianca_local", "confianca")
+    motivo = valor(linha, "motivo_script", "motivo_local", "motivo")
+    brilho = valor(linha, "brilho_medio")
+    variacao = valor(linha, "variacao_visual")
+    pixels_escuros = valor(linha, "pixels_escuros")
+    pixels_quase_pretos = valor(linha, "pixels_quase_pretos")
+    nitidez = valor(linha, "nitidez_aproximada")
+    largura = valor(linha, "largura")
+    altura = valor(linha, "altura")
+
+    sinais = []
+    brilho_num = float_texto(brilho)
+    variacao_num = float_texto(variacao)
+    pixels_escuros_num = float_texto(pixels_escuros)
+    pixels_quase_pretos_num = float_texto(pixels_quase_pretos)
+    nitidez_num = float_texto(nitidez)
+
+    if grupo:
+        sinais.append(f"classificacao_script={grupo}")
+    if brilho_num is not None and brilho_num < 12:
+        sinais.append("brilho muito baixo")
+    if pixels_quase_pretos_num is not None and pixels_quase_pretos_num >= 0.75:
+        sinais.append("muitos pixels quase pretos")
+    if pixels_escuros_num is not None and pixels_escuros_num >= 0.80:
+        sinais.append("imagem predominantemente escura")
+    if variacao_num is not None and variacao_num < 10:
+        sinais.append("pouca variacao visual")
+    if nitidez_num is not None and nitidez_num < 2.5:
+        sinais.append("nitidez baixa")
+
+    linhas = [
+        f"grupo_script: {grupo or 'nao informado'}",
+        f"confianca_script: {confianca or 'nao informada'}",
+        f"motivo_script: {motivo or 'nao informado'}",
+        f"brilho_medio: {brilho or 'nao informado'}",
+        f"variacao_visual: {variacao or 'nao informada'}",
+        f"pixels_escuros: {pixels_escuros or 'nao informado'}",
+        f"pixels_quase_pretos: {pixels_quase_pretos or 'nao informado'}",
+        f"nitidez_aproximada: {nitidez or 'nao informada'}",
+        f"dimensoes: {largura or '?'}x{altura or '?'}",
+    ]
+
+    resumo_sinais = "; ".join(sinais) if sinais else "sem alerta tecnico forte"
+    linhas.append(f"sinais_tecnicos_interpretados: {resumo_sinais}")
+    return "\n".join(linhas), resumo_sinais
+
+
+def script_tem_alerta_critico(linha: Dict[str, str]) -> bool:
+    grupo = valor(linha, "grupo_script", "grupo_local", "grupo").lower()
+    motivo = valor(linha, "motivo_script", "motivo_local", "motivo").lower()
+    brilho = float_texto(valor(linha, "brilho_medio"))
+    variacao = float_texto(valor(linha, "variacao_visual"))
+    pixels_quase_pretos = float_texto(valor(linha, "pixels_quase_pretos"))
+
+    if grupo in {"vermelho", "sem_comprovacao"}:
+        return True
+    if "sem imagem" in motivo or "sem comprovacao" in motivo or "preta" in motivo:
+        return True
+    if brilho is not None and brilho < 8:
+        return True
+    if pixels_quase_pretos is not None and pixels_quase_pretos >= 0.85:
+        return True
+    if variacao is not None and variacao < 6:
+        return True
+    return False
+
+
+def aplicar_guardrails(linha: Dict[str, str], analise: Dict[str, str]) -> Dict[str, str]:
+    if analise.get(COLUNA_ANALISADA) != "aprovada":
+        return analise
+
+    descricao = analise.get(COLUNA_DESCRICAO_VISUAL, "")
+    motivo = analise.get(COLUNA_MOTIVO, "")
+    acao = analise.get(COLUNA_ACAO, "").lower()
+    confianca = float_texto(analise.get(COLUNA_CONFIANCA, "")) or 0.0
+    texto_ia = f"{descricao} {motivo}"
+
+    motivos_bloqueio = []
+    if confianca < 0.75:
+        motivos_bloqueio.append("confianca abaixo do minimo para aprovacao")
+    if acao in {"revisar", "recusar"}:
+        motivos_bloqueio.append(f"acao sugerida pela IA foi {acao}")
+    if contem_termo(texto_ia, TERMOS_EVIDENCIA_FRACA):
+        motivos_bloqueio.append("a propria descricao da IA indica evidencia visual fraca")
+    if script_tem_alerta_critico(linha):
+        motivos_bloqueio.append("script tecnico apontou alerta critico na imagem")
+
+    if not motivos_bloqueio:
+        return analise
+
+    analise_corrigida = {**analise}
+    analise_corrigida[COLUNA_ANALISADA] = "duvidosa"
+    analise_corrigida[COLUNA_GRUPO] = "duvidosa"
+    analise_corrigida[COLUNA_CONFIANCA] = f"{min(confianca, 0.74):.2f}"
+    complemento = "; ".join(motivos_bloqueio)
+    motivo_original = analise.get(COLUNA_MOTIVO, "").strip()
+    analise_corrigida[COLUNA_MOTIVO] = (
+        f"{motivo_original} Guardrail: aprovacao convertida para duvidosa porque {complemento}."
+    ).strip()
+    analise_corrigida[COLUNA_ACAO] = "revisar"
+    return analise_corrigida
 
 
 def analisar_linha_com_ia(linha: Dict[str, str], pasta_base: Path, baixar_links: bool, provedor_ia: str) -> Dict[str, str]:
@@ -207,6 +367,7 @@ def analisar_linha_com_ia(linha: Dict[str, str], pasta_base: Path, baixar_links:
         }
 
     contexto = montar_contexto(linha)
+    analise_script, sinais_script = montar_analise_script(linha)
 
     prompt = f"""
 Voce e um agente auditor de rondas operacionais.
@@ -214,21 +375,38 @@ Voce e um agente auditor de rondas operacionais.
 Sua tarefa e comparar:
 1. a justificativa textual do colaborador;
 2. o contexto da tarefa/ronda;
-3. a imagem enviada como evidencia.
+3. a imagem enviada como evidencia;
+4. a analise tecnica feita previamente pelo script Python.
 
-Decida se a evidencia visual parece coerente com a justificativa.
+Decida se a evidencia visual comprova ou apoia claramente a justificativa e o contexto operacional.
+A analise do script e uma evidencia auxiliar: use os numeros para perceber imagem escura,
+uniforme, borrada ou sem comprovacao, mas nao aceite nem recuse apenas pela metrica.
+Se a imagem contradizer a justificativa, priorize a imagem e explique a divergencia.
+Se a imagem nao permitir decidir com seguranca, nao aprove. Classifique como duvidosa.
 
 Use:
-- aprovada: quando a imagem parece util e coerente com a justificativa.
+- aprovada: somente quando a imagem mostra evidencia visual clara, especifica e coerente com a justificativa.
 - reprovada: quando a imagem e preta, vazia, inutil, sem relacao aparente, ou contradiz a justificativa.
-- duvidosa: quando a imagem tem alguma informacao, mas nao da para confirmar bem.
+- duvidosa: quando a imagem tem alguma informacao, mas nao comprova bem, esta longe, borrada, escura, generica, parcial, ou nao permite decidir.
 - sem_imagem: quando nao houver imagem, mas esse caso normalmente ja sera tratado antes.
+
+Regras conservadoras:
+- Na duvida, use duvidosa, nao aprovada.
+- Nao aprove fotos que apenas parecem plausiveis; aprove apenas quando houver evidencia visual suficiente.
+- Se voce escrever que nao da para identificar, confirmar, ler, ver detalhes ou decidir, a classificacao deve ser duvidosa ou reprovada.
+- Para aprovar, o motivo deve citar qual elemento visivel da imagem confirma a justificativa.
 
 Contexto da linha:
 {contexto}
 
 Justificativa principal:
 {justificativa or "nao informada"}
+
+Analise tecnica do script:
+{analise_script}
+
+Sinais que merecem atencao:
+{sinais_script}
 
 Responda somente em JSON valido neste formato:
 {{
@@ -243,13 +421,13 @@ Responda somente em JSON valido neste formato:
     resposta_texto = chamar_ia(prompt, imagem, provedor_ia)
     dados = extrair_json(resposta_texto)
     analisada = str(dados.get("analisada_por_ia", "duvidosa")).strip().lower()
-    if analisada not in {"aprovada", "reprovada", "duvidosa", "sem_imagem"}:
+    if analisada not in GRUPOS_IA:
         analisada = "duvidosa"
 
     confianca = float(dados.get("confianca", 0.0))
     confianca = max(0.0, min(1.0, confianca))
 
-    return {
+    analise = {
         COLUNA_ANALISADA: analisada,
         COLUNA_GRUPO: analisada,
         COLUNA_CONFIANCA: f"{confianca:.2f}",
@@ -258,6 +436,7 @@ Responda somente em JSON valido neste formato:
         COLUNA_ACAO: str(dados.get("acao_sugerida", "")).strip(),
         COLUNA_ERRO: "",
     }
+    return aplicar_guardrails(linha, analise)
 
 
 def salvar_xlsx(linhas: List[Dict[str, str]], saida: Path) -> None:
@@ -350,12 +529,206 @@ def analisar_csv(entrada: Path, saida: Path, limite: Optional[int], baixar_links
     print(f"Arquivo gerado: {saida}")
 
 
+def conexao_postgres_kwargs() -> Dict[str, object]:
+    dsn = os.getenv("POSTGRES_DSN")
+    if dsn:
+        return {"conninfo": dsn}
+
+    host = os.getenv("POSTGRES_HOST") or os.getenv("PGHOST")
+    database = os.getenv("POSTGRES_DATABASE") or os.getenv("PGDATABASE")
+    user = os.getenv("POSTGRES_USER") or os.getenv("PGUSER")
+    password = os.getenv("POSTGRES_PASSWORD") or os.getenv("PGPASSWORD")
+    port = os.getenv("POSTGRES_PORT") or os.getenv("PGPORT") or "5432"
+    sslmode = os.getenv("POSTGRES_SSLMODE") or os.getenv("PGSSLMODE") or "prefer"
+
+    if not host or not database or not user or not password:
+        raise ValueError(
+            "configure POSTGRES_HOST, POSTGRES_DATABASE, POSTGRES_USER e POSTGRES_PASSWORD "
+            "ou use POSTGRES_DSN"
+        )
+
+    return {
+        "host": host,
+        "dbname": database,
+        "user": user,
+        "password": password,
+        "port": int(port),
+        "sslmode": sslmode,
+    }
+
+
+def modelo_ia(provedor_ia: str) -> str:
+    if provedor_ia == "ollama":
+        return os.getenv("OLLAMA_MODEL", "gemma4:31b-cloud")
+    return os.getenv("OPENAI_MODEL", "gpt-4.1")
+
+
+def buscar_pendentes_postgres(limite: Optional[int], execucao_id: Optional[int]) -> List[Dict[str, str]]:
+    import psycopg
+    from psycopg import sql
+
+    schema = os.getenv("POSTGRES_SCHEMA", "dbo")
+    filtros = [
+        sql.SQL(
+            "NOT EXISTS (SELECT 1 FROM {} ia WHERE ia.ronda_id = r.id)"
+        ).format(sql.Identifier(schema, "analise_ia"))
+    ]
+    parametros: List[object] = []
+
+    if execucao_id is not None:
+        filtros.append(sql.SQL("r.execucao_id = %s"))
+        parametros.append(execucao_id)
+
+    limite_sql = sql.SQL("")
+    if limite:
+        limite_sql = sql.SQL("LIMIT %s")
+        parametros.append(limite)
+
+    query = sql.SQL(
+        """
+        SELECT
+            r.id AS ronda_id,
+            r.execucao_id,
+            s.id AS analise_script_id,
+            r.atividade_id,
+            r.tarefa_id,
+            r.contrato_cr,
+            r.estrutura_id,
+            r.nivel_03,
+            r.nivel_04,
+            r.andar,
+            r.local,
+            r.ambiente,
+            r.qrcode,
+            r.colaborador,
+            r.data,
+            r.data_execucao_inicio,
+            r.execucao_disponibilizacao,
+            r.tarefa_disponibilizacao,
+            r.tarefa_inicio,
+            r.tarefa_termino,
+            r.tarefa_prazo,
+            r.tarefa_nome,
+            r.checklist_nome,
+            r.checklist_descricao,
+            r.justificativa,
+            r.image_url,
+            r.image_path,
+            r.data_justificativa,
+            s.grupo AS grupo_script,
+            s.confianca AS confianca_script,
+            s.motivo AS motivo_script,
+            s.brilho_medio,
+            s.variacao_visual,
+            s.pixels_escuros,
+            s.pixels_quase_pretos,
+            s.nitidez_aproximada,
+            s.largura,
+            s.altura
+        FROM {} r
+        JOIN {} s
+            ON s.ronda_id = r.id
+        WHERE {}
+        ORDER BY r.id
+        {}
+        """
+    ).format(
+        sql.Identifier(schema, "rondas_base"),
+        sql.Identifier(schema, "analise_script"),
+        sql.SQL(" AND ").join(filtros),
+        limite_sql,
+    )
+
+    with psycopg.connect(**conexao_postgres_kwargs()) as conexao:
+        with conexao.cursor() as cursor:
+            cursor.execute(query, parametros)
+            colunas = [coluna.name for coluna in cursor.description]
+            return [
+                {coluna: "" if valor_linha is None else str(valor_linha) for coluna, valor_linha in zip(colunas, linha)}
+                for linha in cursor.fetchall()
+            ]
+
+
+def salvar_analise_ia_postgres(linha: Dict[str, str], analise: Dict[str, str], provedor_ia: str) -> None:
+    import psycopg
+    from psycopg import sql
+
+    schema = os.getenv("POSTGRES_SCHEMA", "dbo")
+    with psycopg.connect(**conexao_postgres_kwargs()) as conexao:
+        with conexao.cursor() as cursor:
+            cursor.execute(
+                sql.SQL(
+                    """
+                    INSERT INTO {} (
+                        ronda_id,
+                        analise_script_id,
+                        analisada_por_ia,
+                        grupo,
+                        confianca,
+                        motivo,
+                        descricao_visual,
+                        acao_sugerida,
+                        erro,
+                        provedor_ia,
+                        modelo_ia
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """
+                ).format(sql.Identifier(schema, "analise_ia")),
+                (
+                    int(valor(linha, "ronda_id")),
+                    int(valor(linha, "analise_script_id")),
+                    analise.get(COLUNA_ANALISADA),
+                    analise.get(COLUNA_GRUPO),
+                    decimal_texto(analise.get(COLUNA_CONFIANCA, "")),
+                    analise.get(COLUNA_MOTIVO),
+                    analise.get(COLUNA_DESCRICAO_VISUAL),
+                    analise.get(COLUNA_ACAO),
+                    analise.get(COLUNA_ERRO),
+                    provedor_ia,
+                    modelo_ia(provedor_ia),
+                ),
+            )
+
+
+def analisar_postgres(limite: Optional[int], execucao_id: Optional[int], baixar_links: bool, provedor_ia: str) -> None:
+    linhas = buscar_pendentes_postgres(limite, execucao_id)
+    if not linhas:
+        print("Nenhuma ronda pendente de analise por IA no Postgres.")
+        return
+
+    pasta_base = Path.cwd()
+    for indice, linha in enumerate(linhas, start=1):
+        try:
+            analise = analisar_linha_com_ia(linha, pasta_base, baixar_links, provedor_ia)
+        except Exception as exc:
+            analise = {
+                COLUNA_ANALISADA: "erro",
+                COLUNA_GRUPO: "erro",
+                COLUNA_CONFIANCA: "0.00",
+                COLUNA_MOTIVO: "A IA nao conseguiu analisar esta linha.",
+                COLUNA_DESCRICAO_VISUAL: "",
+                COLUNA_ACAO: "revisar",
+                COLUNA_ERRO: str(exc),
+            }
+
+        salvar_analise_ia_postgres(linha, analise, provedor_ia)
+        print(
+            f"Postgres {indice}/{len(linhas)} - ronda_id={valor(linha, 'ronda_id')}: "
+            f"{analise[COLUNA_ANALISADA]}"
+        )
+
+    print(f"Analises de IA salvas no Postgres: {len(linhas)}")
+
+
 def criar_parser() -> argparse.ArgumentParser:
     carregar_env_automatico()
 
     parser = argparse.ArgumentParser(description="Agente de IA para validar justificativa + foto de rondas.")
-    parser.add_argument("--entrada", required=True, help="CSV gerado pelo auditor ou exportado do BI")
-    parser.add_argument("--saida", required=True, help="Arquivo XLSX final com a coluna 'analisada por IA'")
+    parser.add_argument("--entrada", help="CSV gerado pelo auditor ou exportado do BI")
+    parser.add_argument("--saida", help="Arquivo XLSX final com a coluna 'analisada por IA'")
+    parser.add_argument("--postgres", action="store_true", help="Le pendencias do Postgres e grava em dbo.analise_ia")
+    parser.add_argument("--execucao-id", type=int, help="No modo --postgres, analisa apenas uma execucao especifica")
     parser.add_argument("--limite", type=int, help="Limita a quantidade de linhas analisadas, util para teste")
     parser.add_argument(
         "--nao-baixar-links",
@@ -372,7 +745,21 @@ def criar_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
-    args = criar_parser().parse_args()
+    parser = criar_parser()
+    args = parser.parse_args()
+
+    if args.postgres:
+        analisar_postgres(
+            limite=args.limite,
+            execucao_id=args.execucao_id,
+            baixar_links=not args.nao_baixar_links,
+            provedor_ia=args.provedor_ia,
+        )
+        return
+
+    if not args.entrada or not args.saida:
+        parser.error("informe --entrada e --saida, ou use --postgres")
+
     analisar_csv(
         entrada=Path(args.entrada),
         saida=Path(args.saida),

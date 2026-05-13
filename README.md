@@ -146,25 +146,89 @@ python -m pip install -r agente_IA\requirements_agente_ia.txt
 ```
 ## Como Rodar
 
-### 1. Rodar usando dados reais do banco
+### 1. Rodar o pipeline completo
+
+Este e o comando recomendado para o uso diario. Ele roda o auditor, salva no Postgres e, se `--rodar-ia` for informado, roda a IA somente na execucao criada.
+
+```powershell
+py pipeline_auditoria.py --data 2026-05-09 --substituir-periodo --rodar-ia
+```
+Processo inteiro utilizando um periodo de inicio e fim:
+
+```powershell
+py pipeline_auditoria.py --data-inicio 2026-05-01 --data-fim 2026-05-09 --substituir-periodo --rodar-ia
+```
+
+Se o intervalo ja pode ter sido rodado antes em dias soltos, use `--substituir-sobreposicoes` para evitar duplicidade no BI:
+
+```powershell
+py pipeline_auditoria.py --data-inicio 2026-05-01 --data-fim 2026-05-10 --substituir-sobreposicoes --rodar-ia
+```
+
+O auditor tambem traz dados de estrutura/local da tabela `dbo.D_ESTRUTURA`:
+
+- `contrato_cr`
+- `estrutura_id`
+- `nivel_03`
+- `nivel_04`
+- `andar`
+- `local`
+- `ambiente`
+- `qrcode`
+
+Antes de usar esses campos no BI, rode a migracao do Postgres:
+
+```powershell
+database\alter_add_contrato_cr.sql
+```
+
+A ligacao e feita primeiro por `Execucao.SKESTRUTURA = D_ESTRUTURA.SKESTRUTURA`. Se nao houver estrutura na execucao, usa `TAREFA.estrutura_id = D_ESTRUTURA.ID_ESTRUTURA`.
+
+Para testar a IA em poucas linhas:
+
+```powershell
+python pipeline_auditoria.py --data 2026-05-09 --substituir-periodo --rodar-ia --limite-ia 5
+```
+
+Por padrao, o arquivo sai em `saidas\auditoria_<data>.xlsx`. Para escolher outro nome:
+
+```powershell
+python pipeline_auditoria.py --data 2026-05-09 --saida saidas\teste_2026-05-09.xlsx --substituir-periodo --rodar-ia
+```
+
+### 2. Rodar usando dados reais do banco
 
 ```powershell
 python ronda_auditor.py --data 2026-04-27 --saida resultados\resultado_2026-04-27.csv
 ```
 
-### 2. Rodar usando um periodo
+### 3. Rodar usando um periodo
 
 ```powershell
 python ronda_auditor.py --data-inicio 2026-04-20 --data-fim 2026-04-27 --saida resultados\resultado_periodo.csv
 ```
 
-### 3. Rodar usando CSV
+### 4. Rodar salvando no Postgres
+
+Gera o arquivo de saida e grava a execucao nas tabelas `dbo.auditoria_execucoes`, `dbo.rondas_base` e `dbo.analise_script`:
+
+```powershell
+python ronda_auditor.py --data 2026-05-09 --saida saidas\auditoria_2026-05-09.xlsx --salvar-postgres
+```
+
+Se quiser reprocessar um dia sem duplicar no BI, use `--substituir-periodo`. Ele remove somente execucoes anteriores do mesmo periodo, origem e campo de filtro antes de inserir a nova:
+
+```powershell
+python ronda_auditor.py --data 2026-05-09 --saida saidas\auditoria_2026-05-09.xlsx --salvar-postgres --substituir-periodo
+```
+
+### 5. Rodar usando CSV
 
 ```powershell
 python ronda_auditor.py --entrada exemplos\atividades_justificadas_exemplo.csv --saida resultados\resultado_auditoria.csv
 ```
 
-### 4. Rodar com IA no auditor
+### 6. Rodar com IA no auditor
 
 Por padrao, a IA e chamada somente para casos `amarelo`.
 
@@ -178,7 +242,7 @@ Para enviar todos os grupos para IA:
 python ronda_auditor.py --data 2026-04-27 --saida resultados\resultado_ia_todos.csv --usar-ia --ia-em todos
 ```
 
-### 5. Rodar o agente IA e gerar XLSX
+### 7. Rodar o agente IA e gerar XLSX
 
 ```powershell
 python agente_IA\agente_analise_ia.py --entrada resultados\resultado_2026-04-27.csv --saida resultados\resultado_2026-04-27_ia.xlsx

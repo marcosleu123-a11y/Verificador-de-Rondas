@@ -1,7 +1,58 @@
+# Arquivos de ambiente e segredos locais
 .env
+.env.*
+!.env.example
+
+# Credenciais, certificados e chaves privadas
+*.key
+*.pem
+*.p12
+*.pfx
+*.crt
+*.cer
+*secret*
+*secrets*
+*credential*
+*credentials*
+
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Ambientes virtuais
+.venv/
+venv/
+env/
+ENV/
+
+# Saidas geradas pela auditoria
+saidas/
+resultados/
 resultado*.csv
-resultados/*.csv
-resultados/*.xlsx
-README.md
+resultado*.xlsx
+auditoria_*.csv
+auditoria_*.xlsx
+
+# Bancos locais e dumps
+*.db
+*.sqlite
+*.sqlite3
+*.bak
+*.dump
+
+# Logs e temporarios
+*.log
+*.tmp
+*.temp
+
+# Sistema operacional e editores
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
