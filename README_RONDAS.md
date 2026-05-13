@@ -36,17 +36,19 @@ python ronda_auditor.py --entrada exemplos\atividades_justificadas_exemplo.csv -
 
 ## Rodando direto no banco
 
-Edite o arquivo `.env` e preencha as credenciais:
+Crie um arquivo `.env` com base no `.env.example` e preencha as credenciais somente na sua maquina:
 
 ```env
-SQL_SERVER=172.31.50.62,1433
-SQL_DATABASE=PROJETOS
+SQL_SERVER=seu_servidor,1433
+SQL_DATABASE=nome_do_banco
 SQL_AUTH=sql
 SQL_USER=seu_usuario
 SQL_PASSWORD=sua_senha
 SQL_DRIVER=ODBC Driver 17 for SQL Server
 SQL_CAMPO_PERIODO=disponibilizacao
 ```
+
+Nao envie o `.env` para o GitHub. Ele pode conter IP de servidor, nome de banco, usuario, senha e chaves de API.
 
 Depois rode para uma data especifica:
 
