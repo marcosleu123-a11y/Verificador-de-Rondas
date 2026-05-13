@@ -171,6 +171,25 @@ Para usar o agente IA separado:
 ```powershell
 python -m pip install -r agente_IA\requirements_agente_ia.txt
 ```
+
+## Configuracao Do Ambiente
+
+Crie um arquivo `.env` na raiz do projeto usando o `.env.example` como modelo. Esse arquivo guarda dados locais de conexao e nao deve ser enviado para o GitHub.
+
+Exemplo seguro:
+
+```env
+SQL_SERVER=seu_servidor,1433
+SQL_DATABASE=nome_do_banco
+SQL_AUTH=sql
+SQL_USER=seu_usuario
+SQL_PASSWORD=sua_senha
+SQL_DRIVER=ODBC Driver 17 for SQL Server
+SQL_CAMPO_PERIODO=disponibilizacao
+```
+
+Mantenha dados reais como IP do servidor, nome do banco, usuario, senha e chaves de API somente no arquivo `.env` local.
+
 ## Como Rodar
 
 ### 1. Rodar o pipeline completo

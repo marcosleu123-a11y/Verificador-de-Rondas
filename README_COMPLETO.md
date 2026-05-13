@@ -62,10 +62,10 @@ O arquivo `.env` guarda as configuracoes do banco e, se necessario, da IA.
 Exemplo:
 
 ```env
-SQL_SERVER=172.31.50.62,1433
-SQL_DATABASE=PROJETOS
+SQL_SERVER=seu_servidor,1433
+SQL_DATABASE=nome_do_banco
 SQL_AUTH=sql
-SQL_USER=administrador
+SQL_USER=seu_usuario
 SQL_PASSWORD=sua_senha
 SQL_DRIVER=ODBC Driver 17 for SQL Server
 SQL_CAMPO_PERIODO=disponibilizacao
@@ -74,7 +74,7 @@ OPENAI_API_KEY=
 OPENAI_MODEL=gpt-4.1
 ```
 
-Nao coloque esse arquivo em repositorio publico. Ele pode conter senha.
+Nao coloque esse arquivo em repositorio publico. Ele pode conter senha, IP de servidor, usuario, nome de banco e chaves de API.
 
 ## Instalacao
 
